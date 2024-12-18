@@ -24,7 +24,7 @@ impl<K, V, S: Default> HashMap<K, V, S> {
 impl<K, V, S> HashMap<K, V, S> {
     /// Creates an empty `HashMap` with the given hasher.
     pub fn with_hasher(hasher: S) -> Self {
-        todo!()
+        Self::with_capacity_and_hasher(0, hasher)
     }
 
     /// Creates an empty `HashMap` with the given hasher and at least the specified capacity.
