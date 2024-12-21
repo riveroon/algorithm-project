@@ -113,7 +113,7 @@ where
 
     /// Performs a lookup for a key, and returns a mutable reference to the value if it exists.
     /// Returns `None` if the key was not present in the map.
-    pub fn get_mut<Q> (&mut self, key: &mut Q) -> Option<&mut V>
+    pub fn get_mut<Q> (&mut self, key: &Q) -> Option<&mut V>
     where 
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>
