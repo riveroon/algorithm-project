@@ -1,59 +1,54 @@
+pub(crate) mod alloc;
+pub(crate) mod meta;
+pub(crate) mod prelude;
+use prelude::*;
+
 mod drain;
 pub use drain::Drain;
 
 use std::{borrow::Borrow, hash::{BuildHasher, Hash, RandomState}};
 
-#[derive(Clone)]
 pub struct HashMap<K, V, S = RandomState> {
-    // TODO: replace with struct members
-    phantom: std::marker::PhantomData<(K, V, S)>
+    alloc: Alloc<(K, V)>,
+    len: usize,
+    hasher: S
 }
 
 impl<K, V, S: Default> HashMap<K, V, S> {
     /// Creates an empty `HashMap``.
     pub fn new() -> Self {
-        todo!()
+        Self::with_capacity(0)
     }
 
     /// Creates an empty `HashMap` with at least the specified capacity.
     pub fn with_capacity(capacity: usize) -> Self {
-        todo!()
+        Self::with_capacity_and_hasher(capacity, S::default())
     }
 }
 
 impl<K, V, S> HashMap<K, V, S> {
     /// Creates an empty `HashMap` with the given hasher.
     pub fn with_hasher(hasher: S) -> Self {
-        todo!()
+        Self::with_capacity_and_hasher(0, hasher)
     }
 
     /// Creates an empty `HashMap` with the given hasher and at least the specified capacity.
     pub fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
-        todo!()
-    }
-
-    /// Reserves capacity for at least `additional` more entries.
-    /// 
-    /// # Panics
-    /// 
-    /// Panics if the new allocation size overflows [`usize`].
-    pub fn reserve(&mut self, additional: usize) {
-        todo!()
+        Self {
+            alloc: Alloc::new(capacity),
+            len: 0,
+            hasher
+        }
     }
 
     /// Returns the number of entries stored in this map.
     pub fn len(&self) -> usize {
-        todo!()
+        self.len
     }
 
     /// Returns the number of entries this map is able to store.
     pub fn capacity(&self) -> usize {
-        todo!()
-    }
-
-    /// Shrinks the capacity of this map as much as possible.
-    pub fn shrink_to_fit(&mut self) {
-        todo!()
+        self.alloc.size()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -65,7 +60,10 @@ impl<K, V, S> HashMap<K, V, S> {
     }
 
     pub fn drain(&mut self) -> Drain<'_, K, V> {
-        todo!()
+        Drain {
+            drain: self.alloc.drain(),
+            len: self.len,
+        }
     }
 }
 
@@ -74,10 +72,79 @@ where
     K: Hash + Eq,
     S: BuildHasher
 {
+    fn resize(&mut self, size: usize) {
+        assert!(self.len() < size);
+
+        if size.next_power_of_two() == self.alloc.size() {
+            return;
+        }
+
+        let mut alloc: Alloc<(K, V)> = Alloc::new(size);
+
+        for (key, value) in self.alloc.drain() {
+            let hash = self.hasher.hash_one(&key);
+
+            let finder = finder::Insertable;
+            let controller = controller::Count(alloc.size());
+
+            let (meta, bucket) = alloc.find_mut(hash, finder, controller)
+                .nth(0)
+                .unwrap();
+
+            *meta = Meta::occupied(
+                meta::Hash::new(hash)
+            );
+            bucket.write((key, value));
+        }
+    }
+
+    /// Reserves capacity for at least `additional` more entries.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the new allocation size overflows [`usize`].
+    pub fn reserve(&mut self, additional: usize) {
+        let size = (self.len() + additional).next_power_of_two();
+
+        if size <= self.alloc.size() {
+            return;
+        }
+        
+        self.resize(self.len() + additional);
+    }
+
+    /// Shrinks the capacity of this map as much as possible.
+    pub fn shrink_to_fit(&mut self) {
+        self.resize(self.len());
+    }
+
     /// Inserts a key-value pair into this map.
     /// Returns a `Some(value)` if a value was present with the matching `key`.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        todo!()
+        let hash = self.hasher.hash_one(&key);
+
+        if self.capacity() < self.len() + 1 {
+            self.reserve(1);
+        }
+
+        let finder = finder::Insertable;
+        let controller = controller::Count(self.alloc.size());
+
+        let (meta, bucket) = self.alloc.find_mut(hash, finder, controller)
+            .nth(0)
+            .unwrap();
+
+        let old = match *meta {
+            Meta::DELETED | Meta::VACANT => None,
+            _ => Some( unsafe { bucket.assume_init_read() }.1 )
+        };
+
+        *meta = Meta::occupied(
+            meta::Hash::new(hash)
+        );
+        bucket.write((key, value));
+
+        old
     }
 
     /// Removes a value whose key matches the given `key` from this map.
@@ -98,7 +165,23 @@ where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>
     {
-        todo!()
+        let hash = self.hasher.hash_one(&key);
+
+        let meta = Meta::occupied(
+            meta::Hash::new(hash)
+        );
+        let finder = finder::Match { meta };
+        let controller = controller::Either(
+            controller::Count(self.alloc.size()),
+            controller::Vacancy
+        );
+
+        self.alloc.find_mut(hash, finder, controller)
+            .find(|(_, bucket)| unsafe { bucket.assume_init_ref() }.0.borrow() == key)
+            .map(|(meta, bucket)| {
+                *meta = Meta::DELETED;
+                unsafe { bucket.assume_init_read() }
+            })
     }
 
     /// Performs a lookup for a key, and returns a reference to the value if it exists.
@@ -108,7 +191,21 @@ where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>
     {
-        todo!()
+        let hash = self.hasher.hash_one(&key);
+
+        let meta = Meta::occupied(
+            meta::Hash::new(hash)
+        );
+        let finder = finder::Match { meta };
+        let controller = controller::Either(
+            controller::Count(self.alloc.size()),
+            controller::Vacancy
+        );
+
+        self.alloc.find(hash, finder, controller)
+            .map(|(_, bucket)| unsafe { bucket.assume_init_ref() })
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
     }
 
     /// Performs a lookup for a key, and returns a mutable reference to the value if it exists.
@@ -118,6 +215,26 @@ where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>
     {
-        todo!()
+        let hash = self.hasher.hash_one(&key);
+
+        let meta = Meta::occupied(
+            meta::Hash::new(hash)
+        );
+        let finder = finder::Match { meta };
+        let controller = controller::Either(
+            controller::Count(self.alloc.size()),
+            controller::Vacancy
+        );
+
+        self.alloc.find_mut(hash, finder, controller)
+            .map(|(_, bucket)| unsafe { bucket.assume_init_mut() })
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
+    }
+}
+
+impl<K, V, S> Drop for HashMap<K, V, S> {
+    fn drop(&mut self) {
+        self.clear();
     }
 }
