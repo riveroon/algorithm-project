@@ -136,7 +136,10 @@ where
 
         let old = match *meta {
             Meta::DELETED | Meta::VACANT => None,
-            _ => Some( unsafe { bucket.assume_init_read() }.1 )
+            _ => {
+                self.len += 1;
+                Some( unsafe { bucket.assume_init_read() }.1 )
+            }
         };
 
         meta.occupy(hash);
