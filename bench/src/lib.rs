@@ -12,8 +12,8 @@ pub const SMALL_COUNT: Settings = Settings {
 };
 
 pub const LARGE_COUNT: Settings = Settings {
-    count: 1_000_000,
-    range: 1_600_000
+    count: 600_000,
+    range: 800_000
 };
 
 #[derive(PartialEq, Eq, Hash)]
@@ -32,12 +32,12 @@ impl SmallKey {
 #[derive(PartialEq, Eq, Hash)]
 pub struct LargeKey {
     id: u32,
-    data: [u8; 256]
+    data: [u8; 64]
 }
 
 impl LargeKey {
     pub fn new(id: u32) -> Self {
-        let data = [0; 256];
+        let data = [0; 64];
         Self { id, data }
     }
 
