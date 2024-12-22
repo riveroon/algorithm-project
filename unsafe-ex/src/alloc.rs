@@ -102,7 +102,10 @@ impl<T> Alloc<T> {
 
 impl<T> Drop for Alloc<T> {
     fn drop(&mut self) {
-        let (layout, _) = layout::<T> (self.size);
-        unsafe { alloc::dealloc(self.meta as *mut u8, layout) };
+        if self.size() > 0 {
+            let (layout, _) = layout::<T> (self.size);
+
+            unsafe { alloc::dealloc(self.meta as *mut u8, layout) };
+        }
     }
 }
