@@ -1,5 +1,4 @@
-mod avx;
-mod fallback;
+use wide::{i8x32, CmpEq};
 
 use crate::prelude::*;
 
@@ -28,10 +27,34 @@ where
     }
 }
 
-#[cfg(target_feature = "avx")]
-pub use avx::*;
-#[cfg(not(target_feature = "avx"))]
-pub use fallback::*;
+pub struct Match {
+    pub meta: Meta,
+}
+
+impl Finder for Match {
+    #[inline]
+    fn find(&mut self, group: &[Meta; 32]) -> u32 {
+        assert_eq!(GROUP_SIZE * 8, 256);
+        
+        let group = i8x32::from(&group[..]);
+        
+        let mask = i8x32::splat(self.meta);
+
+        group.cmp_eq(mask)
+            .move_mask() as u32
+    }
+}
+
+pub struct Occupied;
+
+impl Finder for Occupied {
+    fn find(&mut self, group: &[Meta; 32]) -> u32 {
+        assert_eq!(GROUP_SIZE * 8, 256);
+
+        !i8x32::from(&group[..])
+            .move_mask() as u32
+    }
+}
 
 pub struct Insertable;
 

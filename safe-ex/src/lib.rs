@@ -91,14 +91,14 @@ where
             let finder = finder::Insertable;
             let controller = controller::Count(alloc.size());
 
-            let (mut meta, bucket) = unsafe { 
-                alloc.find_mut(hash, finder, controller) 
-                    .nth(0)
-                    .unwrap_unchecked()
-            };
+            let idx = alloc.find_ref(hash, finder, controller) 
+                .supply(&alloc)
+                .nth(0)
+                .unwrap()
+                .index();
 
-            meta.occupy(hash);
-            bucket.write((key, value));
+            alloc.get_meta(idx).occupy(hash);
+            alloc.buckets.insert(idx, (key, value));
         }
 
         self.alloc = alloc;
@@ -147,29 +147,32 @@ where
 
         self.auto_reserve();
 
-        let meta = Meta::occupied(meta::Hash::new(hash));
+        let meta = meta::occupied(hash);
         let finder = finder::Match { meta };
         let controller = controller::Vacancy;
 
-        match unsafe { self.alloc.find_mut(hash, finder, controller) }
-            .map(|(_, bucket)| unsafe { bucket.assume_init_mut() })
-            .find(|(k, _)| k == &key)
-            .map(|(_, v)| v)
+        match self.alloc.find_ref(hash, finder, controller)
+            .supply(&self.alloc)
+            .find(|entry| &entry.bucket().unwrap().0 == &key)
+            .map(|entry| entry.index())
         {
-            Some(v) => return Some(mem::replace(v, value)),
+            Some(idx) => {
+                let v = &mut self.alloc.buckets[idx].1;
+                return Some(mem::replace(v, value))
+            },
             None => ()
         };
 
         let finder = finder::Insertable;
         let controller = controller::None;
-        let (mut meta, bucket) = unsafe {
-            self.alloc.find_mut(hash, finder, controller)
-                .nth(0)
-                .unwrap_unchecked()
-        };
+        let idx = self.alloc.find_ref(hash, finder, controller)
+            .supply(&self.alloc)
+            .nth(0)
+            .unwrap()
+            .index();
 
-        meta.occupy(hash);
-        bucket.write((key, value));
+        self.alloc.get_meta(idx).occupy(hash);
+        self.alloc.buckets.insert(idx, (key, value));
         self.len += 1;
 
         None
@@ -195,24 +198,25 @@ where
     {
         let hash = self.hasher.hash_one(&key);
 
-        let meta = Meta::occupied(
-            meta::Hash::new(hash)
-        );
+        let meta = meta::occupied(hash);
         let finder = finder::Match { meta };
         let controller = controller::Either(
             controller::Count(self.alloc.size()),
             controller::Vacancy
         );
 
-        let entry = unsafe { self.alloc.find_mut(hash, finder, controller) }
-            .find(|(_, bucket)| unsafe { bucket.assume_init_ref() }.0.borrow() == key)
-            .map(|(mut meta, bucket)| {
-                meta.write(Meta::DELETED);
-                unsafe { bucket.assume_init_read() }
-            });
+        let idx = self.alloc.find_ref(hash, finder, controller)
+            .supply(&self.alloc)
+            .find(|entry| entry.bucket().unwrap().0.borrow() == key)
+            .map(|entry| entry.index())?;
+
+        self.alloc.get_meta(idx)
+            .write(meta::DELETED);
+        let entry = self.alloc.buckets.remove(idx);
 
         self.len -= 1;
         self.deleted += 1;
+
         self.auto_shrink();
 
         entry
@@ -227,9 +231,7 @@ where
     {
         let hash = self.hasher.hash_one(&key);
 
-        let meta = Meta::occupied(
-            meta::Hash::new(hash)
-        );
+        let meta = meta::occupied(hash);
         let finder = finder::Match { meta };
         let controller = controller::Either(
             controller::Count(self.alloc.size()),
@@ -237,7 +239,7 @@ where
         );
 
         self.alloc.find(hash, finder, controller)
-            .map(|(_, bucket)| unsafe { bucket.assume_init_ref() })
+            .map(|(_, bucket)| bucket.unwrap())
             .find(|(k, _)| k.borrow() == key)
             .map(|(_, v)| v)
     }
@@ -251,18 +253,19 @@ where
     {
         let hash = self.hasher.hash_one(&key);
 
-        let meta = Meta::occupied(
-            meta::Hash::new(hash)
-        );
+        let meta = meta::occupied(hash);
         let finder = finder::Match { meta };
         let controller = controller::Either(
             controller::Count(self.alloc.size()),
             controller::Vacancy
         );
 
-        unsafe { self.alloc.find_mut(hash, finder, controller) }
-            .map(|(_, bucket)| unsafe { bucket.assume_init_mut() })
-            .find(|(k, _)| k.borrow() == key)
+        let idx = self.alloc.find_ref(hash, finder, controller)
+            .supply(&self.alloc)
+            .find(|entry| entry.bucket().unwrap().0.borrow() == key)?
+            .index();
+
+        self.alloc.buckets.get_mut(idx)
             .map(|(_, v)| v)
     }
 }

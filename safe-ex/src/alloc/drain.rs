@@ -1,19 +1,20 @@
 use std::iter::FusedIterator;
 
-use super::{controller, finder, Alloc, FindMut};
+use super::{controller, finder, Alloc, FindRef};
 
 pub struct Drain<'a, T> {
-    inner: FindMut<'a, T, finder::Occupied, controller::Count>
+    inner: FindRef<T, finder::Occupied, controller::Count>,
+    alloc: &'a mut Alloc<T>
 }
 
 impl<'a, T> Drain<'a, T> {
     pub fn new(alloc: &'a mut Alloc<T>) -> Self {
         let finder = finder::Occupied;
-        let controller = controller::Count(alloc.size);
+        let controller = controller::Count(alloc.size());
 
-        let inner = unsafe { alloc.find_mut(0, finder, controller) };
+        let inner = alloc.find_ref(0, finder, controller);
 
-        Self { inner }
+        Self { inner, alloc }
     }
 }
 
@@ -21,8 +22,11 @@ impl<T> Iterator for Drain<'_, T> {
     type Item = T;
     
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-            .map(|(_, entry)| unsafe { entry.assume_init_read() })
+        let idx = self.inner.supply(&self.alloc)
+            .next()?
+            .index();
+        
+        self.alloc.buckets.remove(idx)
     }
 }
 
@@ -32,9 +36,6 @@ impl<T> Drop for Drain<'_, T> {
     fn drop(&mut self) {
         while let Some(_) = self.next() {}
 
-        let alloc = self.inner.alloc();
-        if alloc.size() > 0 {
-            unsafe { self.inner.alloc().clear() };
-        }
+        self.alloc.clear();
     }
 }

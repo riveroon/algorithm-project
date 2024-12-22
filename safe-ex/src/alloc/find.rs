@@ -14,7 +14,7 @@ struct FindInner<F, C> {
 
 impl<F, C> FindInner<F, C> {
     fn new<T> (alloc: &Alloc<T>, index: usize, finder: F, controller: C) -> Self {
-        let finished = alloc.size == 0;
+        let finished = alloc.size() == 0;
         let controller = controller::Either(
             controller::Count(alloc.size()),
             controller
@@ -37,24 +37,18 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
                 let found = self.found.trailing_zeros() as usize;
                 self.found ^= 0b1 << found;
 
-                return Some((self.index - GROUP_SIZE + found) & (alloc.size - 1));
+                return Some((self.index - GROUP_SIZE + found) & (alloc.size() - 1));
             }
     
             if self.finished {
                 return None;
             }
 
-            self.index &= alloc.size - 1;
+            self.index &= alloc.size() - 1;
 
-            // SAFETY:
-            //   1. All indexes of alloc.meta is a valid initialized Meta object.
-            //   2. This Iterator has immutable access to Alloc.
-            //   3. alloc.meta has a length of alloc.size + GROUP_SIZE - 1; therefore, we only need to ensure that self.index < alloc.size.
-            let group = unsafe {
-                &mut *(alloc.meta.add(self.index) as *mut _)
-            };
+            let group = &alloc.meta[self.index..self.index + GROUP_SIZE].try_into().unwrap();
 
-            let mask = !u32::MAX.checked_shl(alloc.size as u32)
+            let mask = !u32::MAX.checked_shl(alloc.size() as u32)
                 .unwrap_or(0);
             self.found = self.finder.find(group) & mask;
 
@@ -75,16 +69,16 @@ pub struct MetaMut<'a> {
     inner: MetaMutInner<'a>
 }
 
-impl MetaMut<'_> {
-    fn new<T> (alloc: &mut Alloc<T>, idx: usize) -> Self {
+impl<'a> MetaMut<'a> {
+    pub fn new(alloc: &'a mut [i8], idx: usize) -> Self {
         use MetaMutInner::*;
 
         let inner = match idx {
-            ..GROUP_SIZE => unsafe { WithTrailing(
-                &mut *alloc.meta.add(idx),
-                &mut *alloc.meta.add(alloc.size() + idx),
-            ) },
-            _ => Normal( unsafe { &mut *alloc.meta.add(idx) } ),
+            ..GROUP_SIZE => {
+                let (a, b) = alloc.split_at_mut(alloc.len() - GROUP_SIZE);
+                WithTrailing(&mut a[idx], &mut b[idx])
+            },
+            _ => Normal( &mut alloc[idx] ),
         };
 
         Self { inner }
@@ -104,9 +98,7 @@ impl MetaMut<'_> {
 
     pub fn occupy(&mut self, hash: u64) {
         self.write(
-            Meta::occupied(
-                meta::Hash::new(hash)
-            )
+            meta::occupied(hash)
         );
     }
 }
@@ -144,48 +136,65 @@ impl<'a, T, F, C> Find<'a, T, F, C> {
 }
 
 impl<'a, T, F: Finder, C: Controller> Iterator for Find<'a, T, F, C> {
-    type Item = (&'a Meta, &'a MaybeUninit<T>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next(self.alloc)
-            .map(|i| unsafe {(
-                &*self.alloc.meta.add(i),
-                &*self.alloc.buckets.add(i)
-            )})
-    }
-}
-
-pub struct FindMut<'a, T, F, C> {
-    alloc: &'a mut Alloc<T>,
-    inner: FindInner<F, C>
-}
-
-impl<'a, T, F, C> FindMut<'a, T, F, C> {
-    pub fn new(alloc: &'a mut Alloc<T>, index: usize, finder: F, controller: C) -> Self {
-        let inner = FindInner::new(alloc, index, finder, controller);
-
-        Self { alloc, inner }
-    }
-
-    pub fn alloc(&mut self) -> &mut Alloc<T> {
-        &mut self.alloc
-    }
-
-    pub fn into_inner(self) -> &'a mut Alloc<T> {
-        let Self { alloc, .. } = self;
-
-        alloc
-    }
-}
-
-impl<'a, T, F: Finder, C: Controller> Iterator for FindMut<'a, T, F, C> {
-    type Item = (MetaMut<'a>, &'a mut MaybeUninit<T>);
+    type Item = (&'a Meta, Option<&'a T>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next(self.alloc)
             .map(|i| (
-                MetaMut::new(self.alloc, i),
-                unsafe { &mut *self.alloc.buckets.add(i) }
+                &self.alloc.meta[i],
+                self.alloc.buckets.get(i)
             ))
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct EntryRef<'a, T> {
+    alloc: &'a Alloc<T>,
+    idx: usize
+}
+
+impl<'a, T> EntryRef<'a, T> {
+    pub fn meta(&self) -> &Meta {
+        &self.alloc.meta[self.idx]
+    }
+
+    pub fn bucket(&self) -> Option<&T> {
+        self.alloc.buckets.get(self.idx)
+    }
+
+    pub fn index(&self) -> usize {
+        self.idx
+    }
+}
+
+pub struct FindRef<T, F, C> {
+    inner: FindInner<F, C>,
+    _phantom: std::marker::PhantomData<T>
+}
+
+impl<T, F, C> FindRef<T, F, C> {
+    pub fn new(alloc: &Alloc<T>, index: usize, finder: F, controller: C) -> Self {
+        let inner = FindInner::new(alloc, index, finder, controller);
+
+        Self { inner, _phantom: std::marker::PhantomData }
+    }
+
+    pub fn supply<'a> (&'a mut self, alloc: &'a Alloc<T>) -> FindRefIter<'a, T, F, C> {
+        FindRefIter { inner: self, alloc }
+    }
+}
+
+pub struct FindRefIter<'a, T, F, C> {
+    inner: &'a mut FindRef<T, F, C>,
+    alloc: &'a Alloc<T>
+}
+
+impl<'a, T, F: Finder, C: Controller> Iterator for FindRefIter<'a, T, F, C> {
+    type Item = EntryRef<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.inner.next(self.alloc)
+            .map(|idx| EntryRef { alloc: &self.alloc, idx })
+    }
+}
+

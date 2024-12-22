@@ -1,5 +1,4 @@
-mod avx;
-mod fallback;
+use wide::{i8x32, CmpEq};
 
 use crate::prelude::*;
 
@@ -32,11 +31,24 @@ impl Controller for Count {
     }
 }
 
-#[cfg(target_feature = "avx")]
-pub use avx::*;
-#[cfg(not(target_feature = "avx"))]
-pub use fallback::*;
+#[derive(Clone, Debug)]
+pub struct Vacancy;
 
+impl Controller for Vacancy {
+    fn finished(&mut self, group: &[Meta; 32]) -> bool {
+        let finished = {
+            let group = i8x32::from(&group[..]);
+
+            let vacant = i8x32::from(meta::VACANT);
+
+            let eq = group.cmp_eq(vacant);
+
+            eq.move_mask() != 0
+        };
+
+        finished
+    }
+}
 impl Default for Vacancy {
     fn default() -> Self {
         Self
