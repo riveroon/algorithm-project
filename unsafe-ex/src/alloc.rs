@@ -74,19 +74,6 @@ impl<T> Alloc<T> {
         Drain::new(self)
     }
 
-    pub fn trailing_meta(&mut self) {
-        if self.size() == 0 {
-            return;
-        }
-
-        unsafe {
-            self.meta.copy_to_nonoverlapping(
-                self.meta.add(self.size),
-                GROUP_SIZE.min(self.size)
-            );
-        }
-    }
-
     pub fn find<F: Finder, C:  Controller> (&self, hash: u64, finder: F, controller: C) -> Find<'_, T, F, C> {
         let index = hash as usize & self.size.saturating_sub(1);
 

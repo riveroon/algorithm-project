@@ -88,6 +88,7 @@ pub fn clear() {
     }
 }
 
+#[test]
 pub fn drain() {
     let mut map: HashMap<Key, usize> = HashMap::new();
 

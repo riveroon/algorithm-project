@@ -120,6 +120,7 @@ pub fn clear() {
     }
 }
 
+#[test]
 pub fn drain() {
     let mut map: HashMap<Token, Token> = HashMap::new();
 
@@ -137,4 +138,18 @@ pub fn drain() {
 
     assert_eq!(returned, [true; 100]);
     assert_eq!(map.len(), 0);
+}
+
+#[test]
+pub fn remove_random() {
+    let mut rng = fastrand::Rng::with_seed(0xBAB0);
+    let mut map: HashMap<Token, Token> = HashMap::with_capacity(400);
+    for i in 0..400 {
+        map.insert(Token::new(rng.usize(..600)), Token::new(i));
+    }
+
+    for _ in 0..400 {
+        let key = rng.usize(..600);
+        map.remove(&key);
+    }
 }

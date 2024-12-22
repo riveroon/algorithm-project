@@ -207,13 +207,13 @@ where
             .map(|(mut meta, bucket)| {
                 meta.write(Meta::DELETED);
                 unsafe { bucket.assume_init_read() }
-            });
+            })?;
 
         self.len -= 1;
         self.deleted += 1;
         self.auto_shrink();
 
-        entry
+        Some(entry)
     }
 
     /// Performs a lookup for a key, and returns a reference to the value if it exists.
