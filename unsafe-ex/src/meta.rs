@@ -50,7 +50,7 @@ impl Meta {
     }
 
     pub fn is_occupied(self) -> bool {
-        (self.inner & !HASH_MASK) != 0
+        (self.inner & !HASH_MASK) == 0
     }
 
     pub fn hash(self) -> Option<Hash> {
