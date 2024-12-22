@@ -11,6 +11,7 @@ use std::{borrow::Borrow, hash::{BuildHasher, Hash, RandomState}, mem};
 pub struct HashMap<K, V, S = RandomState> {
     alloc: Alloc<(K, V)>,
     len: usize,
+    deleted: usize,
     hasher: S
 }
 
@@ -37,6 +38,7 @@ impl<K, V, S> HashMap<K, V, S> {
         Self {
             alloc: Alloc::new(capacity),
             len: 0,
+            deleted: 0,
             hasher
         }
     }
@@ -58,6 +60,7 @@ impl<K, V, S> HashMap<K, V, S> {
     pub fn clear(&mut self) {
         let _ = self.drain();
         self.len = 0;
+        self.deleted = 0;
     }
 
     pub fn drain(&mut self) -> Drain<'_, K, V> {
@@ -74,11 +77,7 @@ where
     S: BuildHasher
 {
     fn resize(&mut self, size: usize) {
-        assert!(self.len() < size);
-
-        if size == self.alloc.size() {
-            return;
-        }
+        assert!(self.len() <= size);
 
         let size = size.next_power_of_two();
 
@@ -90,9 +89,11 @@ where
             let finder = finder::Insertable;
             let controller = controller::Count(alloc.size());
 
-            let (mut meta, bucket) = unsafe { alloc.find_mut(hash, finder, controller) }
-                .nth(0)
-                .unwrap();
+            let (mut meta, bucket) = unsafe { 
+                alloc.find_mut(hash, finder, controller) 
+                    .nth(0)
+                    .unwrap_unchecked()
+            };
 
             meta.occupy(hash);
             bucket.write((key, value));
@@ -121,14 +122,28 @@ where
         self.resize(self.len());
     }
 
+    fn auto_reserve(&mut self) {
+        if self.len + self.deleted + 1 > (self.capacity() / 8) * 7 {
+            if self.len < (self.capacity() / 2) {
+                self.resize(self.capacity());
+            } else {
+                self.reserve(8);
+            }
+        }
+    }
+
+    fn auto_shrink(&mut self) {
+        if self.len < self.capacity() / 8 {
+            self.resize(self.capacity() / 2);
+        }
+    }
+
     /// Inserts a key-value pair into this map.
     /// Returns a `Some(value)` if a value was present with the matching `key`.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let hash = self.hasher.hash_one(&key);
 
-        if self.capacity() < self.len() + 1 {
-            self.reserve(1);
-        }
+        self.auto_reserve();
 
         let meta = Meta::occupied(meta::Hash::new(hash));
         let finder = finder::Match { meta };
@@ -145,9 +160,11 @@ where
 
         let finder = finder::Insertable;
         let controller = controller::None;
-        let (mut meta, bucket) = unsafe { self.alloc.find_mut(hash, finder, controller) }
-            .nth(0)
-            .unwrap();
+        let (mut meta, bucket) = unsafe { 
+            self.alloc.find_mut(hash, finder, controller) 
+                .nth(0)
+                .unwrap_unchecked()
+        };
 
         meta.occupy(hash);
         bucket.write((key, value));
@@ -185,13 +202,18 @@ where
             controller::Vacancy
         );
 
-        unsafe { self.alloc.find_mut(hash, finder, controller) }
+        let entry = unsafe { self.alloc.find_mut(hash, finder, controller) }
             .find(|(_, bucket)| unsafe { bucket.assume_init_ref() }.0.borrow() == key)
             .map(|(mut meta, bucket)| {
-                self.len -= 1;
                 meta.write(Meta::DELETED);
                 unsafe { bucket.assume_init_read() }
-            })
+            });
+
+        self.len -= 1;
+        self.deleted += 1;
+        self.auto_shrink();
+
+        entry
     }
 
     /// Performs a lookup for a key, and returns a reference to the value if it exists.
