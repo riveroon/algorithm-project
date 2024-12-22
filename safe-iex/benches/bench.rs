@@ -1,1 +1,0 @@
-bench::bench!(safe_iex::HashMap<_, _, ahash::RandomState>);

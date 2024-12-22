@@ -6,3 +6,13 @@ edition = "2021"
 [dependencies]
 criterion = "0.5"
 fastrand = "2"
+
+[dev-dependencies]
+ahash = "0.8"
+safe-ex = { path = "../safe-ex" }
+safe-iex = { path = "../safe-iex" }
+unsafe-ex = { path = "../unsafe-ex" }
+
+[[bench]]
+name = "bench"
+harness = false

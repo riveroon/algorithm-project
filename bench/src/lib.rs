@@ -12,8 +12,8 @@ pub const SMALL_COUNT: Settings = Settings {
 };
 
 pub const LARGE_COUNT: Settings = Settings {
-    count: 4_000_000,
-    range: 6_000_000
+    count: 1_000_000,
+    range: 1_600_000
 };
 
 #[derive(PartialEq, Eq, Hash)]
@@ -80,12 +80,26 @@ macro_rules! insert_one {
 }
 
 #[macro_export]
+macro_rules! insertion_group {
+    ($label:literal, $c:ident, $rng:ident, $key:ty, $iter:ident, $($name:literal $map:ty),+) => {
+        {
+            let mut group = $c.benchmark_group($label);
+            $(
+                let rng = $rng.clone();
+                $crate::insert_one!($name, group, $map, rng, $iter, $key);
+            )*
+            group.finish();
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! insertion {
-    ($group:ident, $map:ty, $rng:ident) => {
-        $crate::insert_one!("insert_small_few", $group, $map, $rng, SMALL_COUNT, SmallKey);
-        $crate::insert_one!("insert_small_many", $group, $map, $rng, LARGE_COUNT, SmallKey);
-        $crate::insert_one!("insert_large_few", $group, $map, $rng, SMALL_COUNT, LargeKey);
-        $crate::insert_one!("insert_large_many", $group, $map, $rng, LARGE_COUNT, LargeKey);
+    ($c:ident, $rng:ident, $($name:literal $map:ty),+) => {
+        insertion_group!("insertion_small_few", $c, $rng, SmallKey, SMALL_COUNT, $($name $map),+);
+        insertion_group!("insertion_small_many", $c, $rng, SmallKey, LARGE_COUNT, $($name $map),+);
+        insertion_group!("insertion_large_few", $c, $rng, LargeKey, SMALL_COUNT, $($name $map),+);
+        insertion_group!("insertion_large_many", $c, $rng, LargeKey, LARGE_COUNT, $($name $map),+);
     };
 }
 
@@ -107,41 +121,96 @@ macro_rules! lookup_one {
 }
 
 #[macro_export]
+macro_rules! lookup_group {
+    ($label:literal, $c:ident, $rng:ident, $key:ty, $iter:ident, $($name:literal $map:ty),+) => {
+        {
+            let mut group = $c.benchmark_group($label);
+            $(
+                let rng = $rng.clone();
+                $crate::lookup_one!($name, group, $map, rng, $iter, $key);
+            )*
+            group.finish();
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! lookup {
-    ($group:ident, $map:ty, $rng:ident) => {
-        $crate::lookup_one!("lookup_small_few", $group, $map, $rng, SMALL_COUNT, SmallKey);
-        $crate::lookup_one!("lookup_small_many", $group, $map, $rng, LARGE_COUNT, SmallKey);
-        $crate::lookup_one!("lookup_large_few", $group, $map, $rng, SMALL_COUNT, LargeKey);
-        $crate::lookup_one!("insert_large_many", $group, $map, $rng, LARGE_COUNT, LargeKey);
+    ($c:ident, $rng:ident, $($name:literal $map:ty),+) => {
+        lookup_group!("lookup_small_few", $c, $rng, SmallKey, SMALL_COUNT, $($name $map),+);
+        lookup_group!("lookup_small_many", $c, $rng, SmallKey, LARGE_COUNT, $($name $map),+);
+        lookup_group!("lookup_large_few", $c, $rng, LargeKey, SMALL_COUNT, $($name $map),+);
+        lookup_group!("lookup_large_many", $c, $rng, LargeKey, LARGE_COUNT, $($name $map),+);
+    };
+}
+
+#[macro_export]
+macro_rules! remove_one {
+    ($label:literal, $group:ident, $map:ty, $rng:ident, $iter:ident, $key:ty) => {
+        $group.bench_with_input($label, &$rng, |b, rng| {
+            const SETTINGS: $crate::Settings = $crate::$iter;
+            let mut rng = rng.clone();
+            let mut map = $crate::setup!($map, rng, $iter, $key);
+            b.iter(|| {
+                for i in 0..SETTINGS.count {
+                    let key = <$key>::rand(&mut rng, SETTINGS.range);
+                    black_box(map.remove(&key));
+                }
+            })
+        });
+    };
+}
+
+#[macro_export]
+macro_rules! remove_group {
+    ($label:literal, $c:ident, $rng:ident, $key:ty, $iter:ident, $($name:literal $map:ty),+) => {
+        {
+            let mut group = $c.benchmark_group($label);
+            //group.measurement_time(Duration::from_secs(10));
+            $(
+                let rng = $rng.clone();
+                $crate::remove_one!($name, group, $map, rng, $iter, $key);
+            )*
+            group.finish();
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! remove {
+    ($c:ident, $rng:ident, $($name:literal $map:ty),+) => {
+        remove_group!("remove_small_few", $c, $rng, SmallKey, SMALL_COUNT, $($name $map),+);
+        remove_group!("remove_small_many", $c, $rng, SmallKey, LARGE_COUNT, $($name $map),+);
+        remove_group!("remove_large_few", $c, $rng, LargeKey, SMALL_COUNT, $($name $map),+);
+        remove_group!("remove_large_many", $c, $rng, LargeKey, LARGE_COUNT, $($name $map),+);
     };
 }
 
 #[macro_export]
 macro_rules! bench {
-    ($map:ty) => {
+    ($($label:literal $map:ty),+) => {
         use $crate::*;
+        use std::time::Duration;
 
-        fn bench_insertions(c: &mut Criterion) {
-            let mut group = c.benchmark_group("insertion");
-
+        fn bench_insert(c: &mut Criterion) {
             let mut rng = Rng::with_seed(0xBAB0);
             
-            $crate::insertion!(group, $map, rng);
-        
-            group.finish();
+            $crate::insertion!(c, rng, $($label $map),*);
         }
 
-        fn bench_lookups(c: &mut Criterion) {
-            let mut group = c.benchmark_group("lookup");
-
+        fn bench_lookup(c: &mut Criterion) {
             let mut rng = Rng::with_seed(0xBAB0);
             
-            $crate::lookup!(group, $map, rng);
-        
-            group.finish();
+            $crate::lookup!(c, rng, $($label $map),*);
         }
 
-        criterion_group!(benches, bench_insertions, bench_lookups);
+        fn bench_remove(c: &mut Criterion) {
+            let mut rng = Rng::with_seed(0xBAB0);
+            
+            $crate::remove!(c, rng, $($label $map),*);
+        }
+
+        criterion_group!(benches, bench_insert, bench_lookup, bench_remove);
         criterion_main!(benches);
     };
 }
