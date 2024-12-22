@@ -1,43 +1,36 @@
 use std::iter::FusedIterator;
-use std::vec;
 
-/// An iterator that drains elements from the `HashMap`.
 pub struct Drain<'a, K, V> {
-    // We hold a drain of a `Vec<Option<(K, V)>>`.
-    pub(crate) iter: vec::Drain<'a, Option<(K, V)>>,
-    pub(crate) remaining: usize,
+    // TODO: replace with struct members
+    phantom: std::marker::PhantomData<&'a (K, V)>
 }
 
-impl<'a, K, V> Iterator for Drain<'a, K, V> {
+impl<K, V> Iterator for Drain<'_, K, V> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(slot) = self.iter.next() {
-            if let Some(pair) = slot {
-                // Found a real (K, V) entry
-                self.remaining -= 1;
-                return Some(pair);
-            }
-        }
-        None
+        todo!()
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        let len = self.len();
+
+        (len, Some(len))
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for Drain<'a, K, V> {
+impl<K, V> ExactSizeIterator for Drain<'_, K, V> {
+    /// Retuns the remaining length for this iterator.
     fn len(&self) -> usize {
-        self.remaining
+        todo!()
     }
 }
 
-impl<'a, K, V> FusedIterator for Drain<'a, K, V> {}
+impl<K, V> FusedIterator for Drain<'_, K, V> {}
 
-impl<'a, K, V> Drop for Drain<'a, K, V> {
+impl<K, V> Drop for Drain<'_, K, V> {
     fn drop(&mut self) {
-        // Exhaust the iterator so we truly "drain" everything
+        // Drop all remaining values
         for _ in self {}
     }
 }
