@@ -82,7 +82,7 @@ impl<T> Alloc<T> {
         unsafe {
             self.meta.copy_to_nonoverlapping(
                 self.meta.add(self.size),
-                GROUP_SIZE
+                GROUP_SIZE.min(self.size)
             );
         }
     }
