@@ -1,212 +1,271 @@
 mod drain;
 pub use drain::Drain;
 
-use std::collections::hash_map::RandomState;
-use std::{borrow::Borrow, hash::{BuildHasher, Hash, Hasher}, mem};
+use std::{
+    borrow::Borrow,
+    hash::{BuildHasher, Hash, Hasher, RandomState},
+};
 
-#[derive(Clone)]
 pub struct HashMap<K, V, S = RandomState> {
-    buckets: Vec<Option<(K, V)>>,
-    size: usize,
     hasher: S,
+    table: Vec<Option<(K, V)>>,
+    items: usize, // number of occupied slots
+    mask: usize,  // == table.len() - 1, for quick modulus
 }
 
-impl<K, V, S: Default + BuildHasher> HashMap<K, V, S> {
-    /// Creates an empty `HashMap`.
+impl<K, V, S: Default> HashMap<K, V, S> {
+    
+    /// Creates an empty HashMap.
     pub fn new() -> Self {
         Self::with_capacity_and_hasher(0, S::default())
     }
 
-    /// Creates an empty `HashMap` with at least the specified capacity.
+    /// Creates an empty HashMap with at least the specified capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity_and_hasher(capacity, S::default())
     }
 }
 
-impl<K, V, S: BuildHasher> HashMap<K, V, S> {
-    /// Hashes a key using the map's hasher.
-    fn hash<Q: ?Sized + Hash>(&self, key: &Q) -> usize {
-        let mut hasher = self.hasher.build_hasher();
-        key.hash(&mut hasher);
-        hasher.finish() as usize
+impl<K, V, S> HashMap<K, V, S> {
+    /// Creates an empty HashMap with the given hasher.
+    pub fn with_hasher(hasher: S) -> Self {
+        Self::with_capacity_and_hasher(0, hasher)
     }
 
-    /// Creates an empty `HashMap` with the given hasher and at least the specified capacity.
+    /// Creates an empty HashMap with the given hasher and at least the specified capacity.
     pub fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
-        let bucket_count = Self::bucket_count(capacity);
-        Self { 
-            buckets: vec![None; bucket_count],
-            size: 0,
+        let capacity = capacity.next_power_of_two().max(8);
+        let mut table = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            table.push(None);
+        }
+        let mask = capacity - 1;
+
+        Self {
             hasher,
+            table,
+            items: 0,
+            mask,
         }
     }
 
-    /// Reserves capacity for at least `additional` more entries.
-    pub fn reserve(&mut self, additional: usize) {
-        let new_capacity = self.size + additional;
-        if new_capacity > self.buckets.len() {
-            self.resize(new_capacity);
-        }
-    }
 
-    /// Returns the number of entries stored in this map.
     pub fn len(&self) -> usize {
-        self.size
+        self.items
     }
 
-    /// Returns the number of entries this map is able to store.
     pub fn capacity(&self) -> usize {
-        self.buckets.len()
+        self.table.len()
     }
 
-    /// Shrinks the capacity of this map as much as possible.
-    pub fn shrink_to_fit(&mut self) {
-        let new_capacity = Self::bucket_count(self.size);
-        if new_capacity < self.buckets.len() {
-            self.resize(new_capacity);
-        }
-    }
 
     pub fn is_empty(&self) -> bool {
-        self.size == 0
+        self.len() == 0
     }
 
     pub fn clear(&mut self) {
-        self.buckets.iter_mut().for_each(|slot| *slot = None);
-        self.size = 0;
-    }
-
-    fn bucket_count(capacity: usize) -> usize {
-        capacity.next_power_of_two().max(8)
-    }
-
-    fn resize(&mut self, new_capacity: usize) {
-        let new_bucket_count = Self::bucket_count(new_capacity);
-        if new_bucket_count == self.buckets.len() {
-            return;
+        // For each slot in the table, set it to None:
+        for slot in &mut self.table {
+            *slot = None;
         }
-
-        let mut new_buckets = vec![None; new_bucket_count];
-        for slot in self.buckets.drain(..) {
-            if let Some((key, value)) = slot {
-                let hash = self.hash(&key);
-                let mut index = hash % new_bucket_count;
-                while new_buckets[index].is_some() {
-                    index = (index + 1) % new_bucket_count;
-                }
-                new_buckets[index] = Some((key, value));
-            }
-        }
-        self.buckets = new_buckets;
+        // Now we have 0 items, but the capacity remains the same.
+        self.items = 0;
     }
+
+    pub fn drain(&mut self) -> Drain<'_, K, V> {
+        let iter = self.table.drain(..);
+        let remaining = self.items;
+        self.items = 0; 
+        Drain { iter, remaining }
+    }
+
 }
 
 impl<K, V, S> HashMap<K, V, S>
-where 
-    K: Hash + Eq + Clone,
-    S: BuildHasher
+where K: Hash + Eq, S: BuildHasher
 {
-    /// Inserts a key-value pair into this map.
-    /// Returns a `Some(value)` if a value was present with the matching `key`.
+    pub fn shrink_to_fit(&mut self) {
+        let minimal = self.items.next_power_of_two().max(8);
+        if minimal < self.capacity() {
+            self.resize(minimal);
+        }
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        let needed = self.items.saturating_add(additional);
+        if needed > self.capacity() {
+            let mut new_capacity = self.capacity();
+            while needed * 2 > new_capacity {
+                new_capacity *= 2;
+            }
+            self.resize(new_capacity);
+        }
+    }
+
+
+
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        if self.size >= 3 * self.buckets.len() / 4 {
-            self.resize(self.size * 2);
+        if self.items * 2 >= self.table.len() {
+            self.resize(self.table.len() * 2);
         }
 
-        let hash = self.hash(&key);
-        let mut index = hash % self.buckets.len();
-
+        let hash = self.make_hash(&key);
+        let mut index = hash & self.mask;
+        let mut probe = 0;
         loop {
-            match &mut self.buckets[index] {
-                Some((existing_key, existing_value)) if *existing_key == key => {
-                    return Some(mem::replace(existing_value, value));
+            match &mut self.table[index] {
+                Some((ref existing_key, ref mut existing_val)) => {
+                    if existing_key == &key {
+                        let old_val = std::mem::replace(existing_val, value);
+                        return Some(old_val);
+                    }
                 }
                 None => {
-                    self.buckets[index] = Some((key, value));
-                    self.size += 1;
+                    self.table[index] = Some((key, value));
+                    self.items += 1;
                     return None;
                 }
-                _ => {
-                    index = (index + 1) % self.buckets.len();
-                }
+            }
+            probe += 1;
+            index = (hash + probe) & self.mask;
+
+            if probe >= self.table.len() {
+                panic!("HashMap full even after resize—shouldn't happen!");
             }
         }
     }
 
-    /// Removes a value whose key matches the given `key` from this map.
-    /// Returns `None` if the key was not present in the map.
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
         Q: Hash + Eq + ?Sized,
-        K: Borrow<Q>
+        K: Borrow<Q>,
     {
-        let hash = self.hash(key);
-        let mut index = hash % self.buckets.len();
+        self.remove_entry(key).map(|(_, v)| v)
+    }
 
-        loop {
-            match &mut self.buckets[index] {
-                Some((existing_key, _)) if existing_key.borrow() == key => {
-                    let slot = self.buckets[index].take();
-                    self.size -= 1;
+    pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
+    where
+        Q: Hash + Eq + ?Sized,
+        K: Borrow<Q>,
+    {
+        let pos = self.find_position(key)?;
+        let pair = self.table[pos].take();
+        if pair.is_some() {
+            self.items -= 1;
+            self.rehash();
+        }
+        pair
+    }
 
-                    // Re-insert elements in the cluster
-                    let mut next_index = (index + 1) % self.buckets.len();
-                    while let Some((k, v)) = self.buckets[next_index].take() {
-                        let rehash = self.hash(&k);
-                        let mut target_index = rehash % self.buckets.len();
-                        while self.buckets[target_index].is_some() {
-                            target_index = (target_index + 1) % self.buckets.len();
-                        }
-                        self.buckets[target_index] = Some((k, v));
-                        next_index = (next_index + 1) % self.buckets.len();
-                    }
+    pub fn resize(&mut self, new_capacity: usize) {
+        let new_capacity = new_capacity.next_power_of_two().max(8);
 
-                    return slot.map(|(_, v)| v);
-                }
-                None => return None,
-                _ => {
-                    index = (index + 1) % self.buckets.len();
-                }
+        let mut new_table = Vec::with_capacity(new_capacity);
+        for _ in 0..new_capacity {
+            new_table.push(None);
+        }
+
+        let old_table = std::mem::replace(&mut self.table, new_table);
+        self.mask = new_capacity - 1;
+        self.items = 0;
+
+        for slot in old_table.into_iter() {
+            if let Some((k, v)) = slot {
+                self.insert(k, v);
             }
         }
     }
 
-    /// Performs a lookup for a key, and returns a reference to the value if it exists.
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
-    where 
+    where
         Q: Hash + Eq + ?Sized,
-        K: Borrow<Q>
+        K: Borrow<Q>,
     {
-        let hash = self.hash(key);
-        let mut index = hash % self.buckets.len();
-
+        let hash = self.make_hash(key);
+        let mut index = hash & self.mask;
+        let mut probe = 0;
         loop {
-            match &self.buckets[index] {
-                Some((existing_key, value)) if existing_key.borrow() == key => return Some(value),
-                None => return None,
-                _ => {
-                    index = (index + 1) % self.buckets.len();
+            match &self.table[index] {
+                Some((ref k, ref v)) => {
+                    if k.borrow() == key {
+                        return Some(v);
+                    }
                 }
+                None => {
+                    return None;
+                }
+            }
+            probe += 1;
+            index = (hash + probe) & self.mask;
+            if probe >= self.table.len() {
+                return None;
             }
         }
     }
 
-    /// Performs a lookup for a key, and returns a mutable reference to the value if it exists.
+    /// NEW get_mut IMPLEMENTATION
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
-    where 
+    where
         Q: Hash + Eq + ?Sized,
-        K: Borrow<Q>
+        K: Borrow<Q>,
     {
-        let hash = self.hash(key);
-        let mut index = hash % self.buckets.len();
+        // 1) find the slot index by reading the table immutably
+        let pos = self.find_position(key)?;
+        // 2) now do exactly one mutable borrow of that slot
+        self.table[pos].as_mut().map(|(_, v)| v)
+    }
 
+    fn find_position<Q>(&self, key: &Q) -> Option<usize>
+    where
+        Q: Hash + Eq + ?Sized,
+        K: Borrow<Q>,
+    {
+        let hash = self.make_hash(key);
+        let mut index = hash & self.mask;
+        let mut probe = 0;
         loop {
-            match &mut self.buckets[index] {
-                Some((existing_key, value)) if existing_key.borrow() == key => return Some(value),
-                None => return None,
-                _ => {
-                    index = (index + 1) % self.buckets.len();
+            match &self.table[index] {
+                Some((ref k, _v)) => {
+                    if k.borrow() == key {
+                        return Some(index);
+                    }
                 }
+                None => {
+                    return None;
+                }
+            }
+            probe += 1;
+            index = (hash + probe) & self.mask;
+            if probe >= self.table.len() {
+                return None;
+            }
+        }
+    }
+
+    fn make_hash<Q>(&self, key: &Q) -> usize
+    where
+        Q: Hash + ?Sized,
+    {
+        let mut state = self.hasher.build_hasher();
+        key.hash(&mut state);
+        state.finish() as usize
+    }
+
+
+    fn rehash(&mut self) {
+        let capacity = self.table.len();
+
+        let mut new_table = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            new_table.push(None);
+        }
+
+        let old_table = std::mem::replace(&mut self.table, new_table);
+        self.items = 0;
+
+        for slot in old_table.into_iter() {
+            if let Some((k, v)) = slot {
+                self.insert(k, v);
             }
         }
     }
