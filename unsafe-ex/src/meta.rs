@@ -43,16 +43,19 @@ impl Meta {
         inner: DELETED
     };
 
+    #[inline(always)]
     pub const fn occupied(hash: Hash) -> Self {
         let inner = (hash.inner & HASH_MASK) | OCCUPIED as u8;
         
         Self { inner }
     }
 
+    #[inline(always)]
     pub fn is_occupied(self) -> bool {
         (self.inner & !HASH_MASK) == 0
     }
 
+    #[inline(always)]
     pub fn hash(self) -> Option<Hash> {
         match self.is_occupied() {
             true => Some ( Hash {

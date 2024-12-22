@@ -10,6 +10,7 @@ pub trait Finder {
 pub struct Any;
 
 impl Finder for Any {
+    #[inline(always)]
     fn find(&mut self, _: &[Meta; 32]) -> u32 {
         u32::MAX
     }
@@ -22,6 +23,7 @@ where
     T: Finder,
     U: Finder
 {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         self.0.find(group) | self.1.find(group)
     }
@@ -32,7 +34,7 @@ pub struct Match {
 }
 
 impl Finder for Match {
-    #[inline]
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         assert_eq!(GROUP_SIZE * 8, 256);
         
@@ -48,6 +50,7 @@ impl Finder for Match {
 pub struct Occupied;
 
 impl Finder for Occupied {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         assert_eq!(GROUP_SIZE * 8, 256);
 
@@ -59,6 +62,7 @@ impl Finder for Occupied {
 pub struct Insertable;
 
 impl Finder for Insertable {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         let mut occupied = Occupied {};
         !occupied.find(group)

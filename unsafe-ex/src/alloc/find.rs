@@ -33,7 +33,7 @@ impl<F, C> FindInner<F, C> {
 impl<F: Finder, C: Controller> FindInner<F, C> {
     fn next<T> (&mut self, alloc: &Alloc<T>) -> Option<usize> {
         loop {
-            if self.found != 0 {
+            if likely(self.found != 0) {
                 let found = self.found.trailing_zeros() as usize;
                 self.found ^= 0b1 << found;
 

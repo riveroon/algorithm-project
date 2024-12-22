@@ -22,6 +22,7 @@ pub(crate) struct Alloc<T> {
 }
 
 impl<T> Alloc<T> {
+    #[inline]
     pub fn new(size: usize) -> Self {
         if size == 0 {
             return Self {
@@ -38,29 +39,35 @@ impl<T> Alloc<T> {
         }
     }
 
+    #[inline]
     pub fn size(&self) -> usize {
         self.buckets.capacity()
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.meta
             .fill(meta::VACANT);
     }
 
+    #[inline]
     pub fn drain(&mut self) -> Drain<'_, T> {
         Drain::new(self)
     }
 
+    #[inline(always)]
     pub fn get_meta(&mut self, idx: usize) -> MetaMut {
         MetaMut::new(&mut self.meta, idx)
     }
 
+    #[inline(always)]
     pub fn find<F: Finder, C:  Controller> (&self, hash: u64, finder: F, controller: C) -> Find<'_, T, F, C> {
         let index = hash as usize & self.size().saturating_sub(1);
 
         Find::new(self, index, finder, controller)
     }
 
+    #[inline(always)]
     pub fn find_ref<F: Finder,  C: Controller> (&self, hash: u64, finder: F, controller: C) -> FindRef<T, F, C> {
         let index = hash as usize & self.size().saturating_sub(1);
 

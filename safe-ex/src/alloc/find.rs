@@ -8,17 +8,13 @@ struct FindInner<F, C> {
     index: usize,
     finder: F,
     found: u32,
-    controller: CountedController<C>,
+    controller: C,
     finished: bool
 }
 
 impl<F, C> FindInner<F, C> {
     fn new<T> (alloc: &Alloc<T>, index: usize, finder: F, controller: C) -> Self {
         let finished = alloc.size() == 0;
-        let controller = controller::Either(
-            controller::Count(alloc.size()),
-            controller
-        );
 
         Self {
             index,
@@ -138,6 +134,7 @@ impl<'a, T, F, C> Find<'a, T, F, C> {
 impl<'a, T, F: Finder, C: Controller> Iterator for Find<'a, T, F, C> {
     type Item = (&'a Meta, Option<&'a T>);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next(self.alloc)
             .map(|i| (
@@ -192,6 +189,7 @@ pub struct FindRefIter<'a, T, F, C> {
 impl<'a, T, F: Finder, C: Controller> Iterator for FindRefIter<'a, T, F, C> {
     type Item = EntryRef<'a, T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.inner.next(self.alloc)
             .map(|idx| EntryRef { alloc: &self.alloc, idx })
