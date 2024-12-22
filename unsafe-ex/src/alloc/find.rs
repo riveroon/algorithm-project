@@ -37,12 +37,14 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
                 let found = self.found.trailing_zeros() as usize;
                 self.found ^= 0b1 << found;
 
-                return Some((self.index + found) & (alloc.size - 1));
+                return Some((self.index - GROUP_SIZE + found) & (alloc.size - 1));
             }
     
             if self.finished {
                 return None;
             }
+
+            self.index &= alloc.size - 1;
 
             // SAFETY:
             //   1. All indexes of alloc.meta is a valid initialized Meta object.
@@ -56,9 +58,9 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
                 .unwrap_or(0);
             self.found = self.finder.find(group) & mask;
 
-            self.finished = likely(self.controller.finished(group));
+            self.finished = self.controller.finished(group);
 
-            self.index = (self.index + GROUP_SIZE) & (alloc.size - 1);
+            self.index = self.index + GROUP_SIZE;
         }
     }
 }
