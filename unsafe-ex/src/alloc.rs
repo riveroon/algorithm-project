@@ -16,6 +16,14 @@ use crate::Meta;
 
 pub(crate) const GROUP_SIZE: usize = 32;
 
+fn layout<T> (size: usize) -> (alloc::Layout, usize) {
+    let meta = alloc::Layout::array::<Meta> (size).unwrap();
+    let buckets = alloc::Layout::array::<T> (size).unwrap();
+
+    meta.extend(buckets)
+        .unwrap()
+}
+
 pub(crate) struct Alloc<T> {
     pub meta: *mut Meta,
     pub buckets: *mut MaybeUninit<T>,
@@ -34,13 +42,7 @@ impl<T> Alloc<T> {
 
         let size = size.next_power_of_two();
 
-        let (layout, offset) = {
-            let meta = alloc::Layout::array::<Meta> (size).unwrap();
-            let buckets = alloc::Layout::array::<T> (size).unwrap();
-
-            meta.extend(buckets)
-                .unwrap()
-        };
+        let (layout, offset) = layout::<T> (size);
         let alloc = unsafe { alloc::alloc(layout) };
 
         let meta = alloc as *mut Meta;
@@ -91,5 +93,12 @@ impl<T> Alloc<T> {
         let index = hash as usize & self.size.saturating_sub(1);
 
         FindMut::new(self, index, finder, controller)
+    }
+}
+
+impl<T> Drop for Alloc<T> {
+    fn drop(&mut self) {
+        let (layout, _) = layout::<T> (self.size);
+        unsafe { alloc::dealloc(self.meta as *mut u8, layout) };
     }
 }
