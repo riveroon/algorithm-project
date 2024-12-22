@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+stable-vec = "0.4"
+wide = "0.7"
 
 [dev-dependencies]
