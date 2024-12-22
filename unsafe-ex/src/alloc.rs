@@ -75,6 +75,10 @@ impl<T> Alloc<T> {
     }
 
     pub fn trailing_meta(&mut self) {
+        if self.size() == 0 {
+            return;
+        }
+
         unsafe {
             self.meta.copy_to_nonoverlapping(
                 self.meta.add(self.size),

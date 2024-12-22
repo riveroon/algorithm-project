@@ -32,8 +32,9 @@ impl<T> Drop for Drain<'_, T> {
     fn drop(&mut self) {
         while let Some(_) = self.next() {}
 
-        unsafe {
-            self.inner.alloc().clear();
+        let alloc = self.inner.alloc();
+        if alloc.size() > 0 {
+            unsafe { self.inner.alloc().clear() };
         }
     }
 }
