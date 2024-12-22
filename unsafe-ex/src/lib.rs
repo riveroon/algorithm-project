@@ -96,6 +96,8 @@ where
             );
             bucket.write((key, value));
         }
+
+        self.alloc = alloc;
     }
 
     /// Reserves capacity for at least `additional` more entries.
