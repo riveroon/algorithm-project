@@ -10,6 +10,7 @@ pub struct Drain<'a, K, V> {
 impl<K, V> Iterator for Drain<'_, K, V> {
     type Item = (K, V);
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.drain.next()
     }

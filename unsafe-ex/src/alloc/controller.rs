@@ -16,6 +16,7 @@ where
     T: Controller, 
     U: Controller
 {
+    #[inline(always)]
     fn finished(&mut self, group: &[Meta; 32]) -> bool {
         self.0.finished(group) || self.1.finished(group)
     }
@@ -25,6 +26,7 @@ where
 pub struct Count(pub usize);
 
 impl Controller for Count {
+    #[inline(always)]
     fn finished(&mut self, group: &[Meta; 32]) -> bool {
         self.0 = self.0.saturating_sub(group.len());
 
@@ -46,6 +48,7 @@ impl Default for Vacancy {
 pub struct None;
 
 impl Controller for None {
+    #[inline(always)]
     fn finished(&mut self, _: &[Meta; 32]) -> bool {
         false
     }

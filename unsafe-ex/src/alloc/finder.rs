@@ -11,6 +11,7 @@ pub trait Finder {
 pub struct Any;
 
 impl Finder for Any {
+    #[inline(always)]
     fn find(&mut self, _: &[Meta; 32]) -> u32 {
         u32::MAX
     }
@@ -23,6 +24,7 @@ where
     T: Finder,
     U: Finder
 {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         self.0.find(group) | self.1.find(group)
     }
@@ -36,6 +38,7 @@ pub use fallback::*;
 pub struct Insertable;
 
 impl Finder for Insertable {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         let mut occupied = Occupied {};
         !occupied.find(group)

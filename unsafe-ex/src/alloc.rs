@@ -31,6 +31,7 @@ pub(crate) struct Alloc<T> {
 }
 
 impl<T> Alloc<T> {
+    #[inline]
     pub fn new(size: usize) -> Self {
         if size == 0 {
             return Self {
@@ -59,21 +60,25 @@ impl<T> Alloc<T> {
         Self { meta, buckets, size }
     }
 
+    #[inline(always)]
     pub fn size(&self) -> usize {
         self.size
     }
 
     /// # SAFETY
     /// The caller must ensure that the called `Alloc` object does not have a size of 0.
+    #[inline(always)]
     pub unsafe fn clear(&mut self) {
         slice::from_raw_parts_mut(self.meta, self.size + GROUP_SIZE)
             .fill(Meta::VACANT);
     }
 
+    #[inline(always)]
     pub fn drain(&mut self) -> Drain<'_, T> {
         Drain::new(self)
     }
 
+    #[inline(always)]
     pub fn find<F: Finder, C:  Controller> (&self, hash: u64, finder: F, controller: C) -> Find<'_, T, F, C> {
         let index = hash as usize & self.size.saturating_sub(1);
 
@@ -82,6 +87,7 @@ impl<T> Alloc<T> {
 
     /// # SAFETY
     /// Mutations for the meta should match the mutations for the buckets.
+    #[inline(always)]
     pub unsafe fn find_mut<F: Finder,  C: Controller> (&mut self, hash: u64, finder: F, controller: C) -> FindMut<'_, T, F, C> {
         let index = hash as usize & self.size.saturating_sub(1);
 

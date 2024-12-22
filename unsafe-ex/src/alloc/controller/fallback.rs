@@ -4,6 +4,7 @@ use crate::prelude::*;
 pub struct Vacancy;
 
 impl Controller for Vacancy {
+    #[inline(always)]
     fn finished(&mut self, group: &[Meta; 32]) -> bool {
         let mut finished = false;
         for m in group {

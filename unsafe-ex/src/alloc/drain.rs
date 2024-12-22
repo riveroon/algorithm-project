@@ -3,13 +3,14 @@ use std::iter::FusedIterator;
 use super::{controller, finder, Alloc, FindMut};
 
 pub struct Drain<'a, T> {
-    inner: FindMut<'a, T, finder::Occupied, controller::Count>
+    inner: FindMut<'a, T, finder::Occupied, controller::None>
 }
 
 impl<'a, T> Drain<'a, T> {
+    #[inline]
     pub fn new(alloc: &'a mut Alloc<T>) -> Self {
         let finder = finder::Occupied;
-        let controller = controller::Count(alloc.size);
+        let controller = controller::None;
 
         let inner = unsafe { alloc.find_mut(0, finder, controller) };
 
@@ -20,6 +21,7 @@ impl<'a, T> Drain<'a, T> {
 impl<T> Iterator for Drain<'_, T> {
     type Item = T;
     
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next()
             .map(|(_, entry)| unsafe { entry.assume_init_read() })

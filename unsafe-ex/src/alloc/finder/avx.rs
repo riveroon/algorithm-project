@@ -5,7 +5,7 @@ pub struct Match {
 }
 
 impl Finder for Match {
-    #[inline]
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         use core::arch::x86_64::{self, __m256i};
 
@@ -30,6 +30,7 @@ impl Finder for Match {
 pub struct Occupied;
 
 impl Finder for Occupied {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         use core::arch::x86_64::{self, __m256i};
 

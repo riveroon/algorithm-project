@@ -5,6 +5,7 @@ pub struct Match {
 }
 
 impl Finder for Match {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         // Best-effor basis for autovectorization
         let mut found = 0;
@@ -21,6 +22,7 @@ impl Finder for Match {
 pub struct Occupied;
 
 impl Finder for Occupied {
+    #[inline(always)]
     fn find(&mut self, group: &[Meta; 32]) -> u32 {
         let mut found = 0;
         for (i, &m) in group.iter().enumerate() {
