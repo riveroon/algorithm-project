@@ -17,7 +17,7 @@ use crate::Meta;
 pub(crate) const GROUP_SIZE: usize = 32;
 
 fn layout<T> (size: usize) -> (alloc::Layout, usize) {
-    let meta = alloc::Layout::array::<Meta> (size).unwrap();
+    let meta = alloc::Layout::array::<Meta> (size + GROUP_SIZE).unwrap();
     let buckets = alloc::Layout::array::<T> (size).unwrap();
 
     meta.extend(buckets)
