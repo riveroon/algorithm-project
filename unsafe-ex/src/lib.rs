@@ -87,13 +87,11 @@ where
             let finder = finder::Insertable;
             let controller = controller::Count(alloc.size());
 
-            let (meta, bucket) = alloc.find_mut(hash, finder, controller)
+            let (mut meta, bucket) = unsafe { alloc.find_mut(hash, finder, controller) }
                 .nth(0)
                 .unwrap();
 
-            *meta = Meta::occupied(
-                meta::Hash::new(hash)
-            );
+            meta.occupy(hash);
             bucket.write((key, value));
         }
 
@@ -132,7 +130,7 @@ where
         let finder = finder::Insertable;
         let controller = controller::Count(self.alloc.size());
 
-        let (meta, bucket) = self.alloc.find_mut(hash, finder, controller)
+        let (mut meta, bucket) = unsafe { self.alloc.find_mut(hash, finder, controller) }
             .nth(0)
             .unwrap();
 
@@ -141,10 +139,10 @@ where
             _ => Some( unsafe { bucket.assume_init_read() }.1 )
         };
 
-        *meta = Meta::occupied(
-            meta::Hash::new(hash)
-        );
+        meta.occupy(hash);
         bucket.write((key, value));
+
+        self.alloc.trailing_meta();
 
         old
     }
@@ -178,10 +176,10 @@ where
             controller::Vacancy
         );
 
-        self.alloc.find_mut(hash, finder, controller)
+        unsafe { self.alloc.find_mut(hash, finder, controller) }
             .find(|(_, bucket)| unsafe { bucket.assume_init_ref() }.0.borrow() == key)
-            .map(|(meta, bucket)| {
-                *meta = Meta::DELETED;
+            .map(|(mut meta, bucket)| {
+                meta.write(Meta::DELETED);
                 unsafe { bucket.assume_init_read() }
             })
     }
@@ -228,7 +226,7 @@ where
             controller::Vacancy
         );
 
-        self.alloc.find_mut(hash, finder, controller)
+        unsafe { self.alloc.find_mut(hash, finder, controller) }
             .map(|(_, bucket)| unsafe { bucket.assume_init_mut() })
             .find(|(k, _)| k.borrow() == key)
             .map(|(_, v)| v)

@@ -1,4 +1,4 @@
-use std::{iter::FusedIterator, mem::MaybeUninit};
+use std::iter::FusedIterator;
 
 use super::{controller, finder, Alloc, FindMut};
 
@@ -11,7 +11,7 @@ impl<'a, T> Drain<'a, T> {
         let finder = finder::Occupied;
         let controller = controller::Count(alloc.size);
 
-        let inner = alloc.find_mut(0, finder, controller);
+        let inner = unsafe { alloc.find_mut(0, finder, controller) };
 
         Self { inner }
     }

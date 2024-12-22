@@ -1,6 +1,8 @@
 pub(crate) use crate::alloc::*;
 pub(crate) use crate::meta::Meta;
 
+pub use std::mem::MaybeUninit;
+
 #[inline(always)]
 pub(crate) fn likely(b: bool) -> bool {
     !unlikely(!b)

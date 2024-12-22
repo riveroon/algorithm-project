@@ -93,7 +93,9 @@ impl<T> Alloc<T> {
         Find::new(self, index, finder, controller)
     }
 
-    pub fn find_mut<F: Finder,  C: Controller> (&mut self, hash: u64, finder: F, controller: C) -> FindMut<'_, T, F, C> {
+    /// # SAFETY
+    /// The caller must ensure that Alloc::trailing_meta is called if the front 32 indices are mutated.
+    pub unsafe fn find_mut<F: Finder,  C: Controller> (&mut self, hash: u64, finder: F, controller: C) -> FindMut<'_, T, F, C> {
         let index = hash as usize & self.size.saturating_sub(1);
 
         FindMut::new(self, index, finder, controller)

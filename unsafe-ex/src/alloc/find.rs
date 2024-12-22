@@ -1,18 +1,24 @@
-use std::{mem::{self, MaybeUninit}, slice};
+use std::ops;
 
-use crate::prelude::*;
+use crate::{meta, prelude::*};
+
+type CountedController<C> = controller::Either<controller::Count, C>;
 
 struct FindInner<F, C> {
     index: usize,
     finder: F,
     found: u32,
-    controller: C,
+    controller: CountedController<C>,
     finished: bool
 }
 
 impl<F, C> FindInner<F, C> {
     fn new<T> (alloc: &Alloc<T>, index: usize, finder: F, controller: C) -> Self {
         let finished = alloc.size == 0;
+        let controller = controller::Either(
+            controller::Count(alloc.size()),
+            controller
+        );
 
         Self {
             index,
@@ -55,6 +61,64 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
     }
 }
 
+enum MetaMutInner<'a> {
+    Normal(&'a mut Meta),
+    WithTrailing(&'a mut Meta, &'a mut Meta)
+}
+
+pub struct MetaMut<'a> {
+    inner: MetaMutInner<'a>
+}
+
+impl MetaMut<'_> {
+    fn new<T> (alloc: &mut Alloc<T>, idx: usize) -> Self {
+        use MetaMutInner::*;
+
+        let inner = match idx {
+            ..GROUP_SIZE => unsafe { WithTrailing(
+                &mut *alloc.meta.add(idx),
+                &mut *alloc.meta.add(alloc.size() + idx),
+            ) },
+            _ => Normal( unsafe { &mut *alloc.meta.add(idx) } ),
+        };
+
+        Self { inner }
+    }
+
+    pub fn write(&mut self, meta: Meta) {
+        use MetaMutInner::*;
+
+        match &mut self.inner {
+            Normal(m) => **m = meta,
+            WithTrailing(m, trailing) => {
+                **m = meta;
+                **trailing = meta;
+            }
+        }
+    }
+
+    pub fn occupy(&mut self, hash: u64) {
+        self.write(
+            Meta::occupied(
+                meta::Hash::new(hash)
+            )
+        );
+    }
+}
+
+impl ops::Deref for MetaMut<'_> {
+    type Target = Meta;
+
+    fn deref(&self) -> &Self::Target {
+        use MetaMutInner::*;
+
+        match &self.inner {
+            Normal(meta) => meta,
+            WithTrailing(meta, _) => meta
+        }
+    }
+}
+
 pub struct Find<'a, T, F, C> {
     alloc: &'a Alloc<T>,
     inner: FindInner<F, C>
@@ -81,53 +145,36 @@ impl<'a, T, F: Finder, C: Controller> Iterator for Find<'a, T, F, C> {
 }
 
 pub struct FindMut<'a, T, F, C> {
-    alloc: mem::ManuallyDrop<&'a mut Alloc<T>>,
-    inner: mem::ManuallyDrop<FindInner<F, C>>
+    alloc: &'a mut Alloc<T>,
+    inner: FindInner<F, C>
 }
 
 impl<'a, T, F, C> FindMut<'a, T, F, C> {
     pub fn new(alloc: &'a mut Alloc<T>, index: usize, finder: F, controller: C) -> Self {
         let inner = FindInner::new(alloc, index, finder, controller);
 
-        Self {
-            alloc: mem::ManuallyDrop::new(alloc),
-            inner: mem::ManuallyDrop::new(inner)
-        }
+        Self { alloc, inner }
     }
 
     pub fn alloc(&mut self) -> &mut Alloc<T> {
         &mut self.alloc
     }
 
-    //TODO: Evaluate if this needs to be unsafe
-    pub fn into_inner(mut self) -> &'a mut Alloc<T> {
-        // SAFETY: self is forgotten below.
-        let alloc = unsafe { mem::ManuallyDrop::take(&mut self.alloc) };
-        let inner = unsafe { mem::ManuallyDrop::take(&mut self.inner) };
-        
-        alloc.trailing_meta();
-
-        mem::forget(self);
-        drop(inner);
+    pub fn into_inner(self) -> &'a mut Alloc<T> {
+        let Self { alloc, .. } = self;
 
         alloc
     }
 }
 
 impl<'a, T, F: Finder, C: Controller> Iterator for FindMut<'a, T, F, C> {
-    type Item = (&'a mut Meta, &'a mut MaybeUninit<T>);
+    type Item = (MetaMut<'a>, &'a mut MaybeUninit<T>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next(*self.alloc)
-            .map(|i| unsafe {(
-                &mut *self.alloc.meta.add(i),
-                &mut *self.alloc.buckets.add(i)
-            )})
-    }
-}
-
-impl<T, F, C> Drop for FindMut<'_, T, F, C> {
-    fn drop(&mut self) {
-        self.alloc.trailing_meta();
+        self.inner.next(self.alloc)
+            .map(|i| (
+                MetaMut::new(self.alloc, i),
+                unsafe { &mut *self.alloc.buckets.add(i) }
+            ))
     }
 }
