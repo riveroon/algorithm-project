@@ -19,6 +19,21 @@ pub fn insert_lookup() {
 }
 
 #[test]
+pub fn insert_replace() {
+    let mut map: HashMap<Key, usize> = HashMap::new();
+
+    for i in 0..100 {
+        map.insert(Key(i), !i);
+    }
+
+    assert_eq!(map.len(), 100);
+
+    for i in 0..100 {
+        map.insert(Key(i), i);
+    }
+}
+
+#[test]
 pub fn remove() {
     let mut map: HashMap<Key, usize> = HashMap::new();
 
@@ -56,10 +71,10 @@ pub fn modify_lookup() {
 
 #[test]
 pub fn clear() {
-    let mut map: HashMap<Key, Box<usize>> = HashMap::new();
+    let mut map: HashMap<Key, usize> = HashMap::new();
 
     for i in 0..100 {
-        map.insert(Key(i), Box::new(!i));
+        map.insert(Key(i), !i);
     }
 
     assert_eq!(map.len(), 100);
@@ -74,17 +89,19 @@ pub fn clear() {
 }
 
 pub fn drain() {
-    let mut map: HashMap<Key, ()> = HashMap::new();
+    let mut map: HashMap<Key, usize> = HashMap::new();
 
     for i in 0..100 {
-        map.insert(Key(i), ());
+        map.insert(Key(i), i);
     }
 
     let mut returned = [false; 100];
 
-    for (Key(k), _) in map.drain() {
+    for (Key(k), v) in map.drain() {
         assert_eq!(returned[k], false);
         returned[k] = true;
+
+        assert_eq!(v, k);
     }
 
     assert_eq!(returned, [true; 100]);
