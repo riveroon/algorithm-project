@@ -6,7 +6,7 @@ use prelude::*;
 mod drain;
 pub use drain::Drain;
 
-use std::{borrow::Borrow, hash::{BuildHasher, Hash, RandomState}};
+use std::{borrow::Borrow, hash::{BuildHasher, Hash, RandomState}, mem};
 
 pub struct HashMap<K, V, S = RandomState> {
     alloc: Alloc<(K, V)>,
@@ -75,9 +75,11 @@ where
     fn resize(&mut self, size: usize) {
         assert!(self.len() < size);
 
-        if size.next_power_of_two() == self.alloc.size() {
+        if size == self.alloc.size() {
             return;
         }
+
+        let size = size.next_power_of_two();
 
         let mut alloc: Alloc<(K, V)> = Alloc::new(size);
 
@@ -104,13 +106,13 @@ where
     /// 
     /// Panics if the new allocation size overflows [`usize`].
     pub fn reserve(&mut self, additional: usize) {
-        let size = (self.len() + additional).next_power_of_two();
+        let size = self.len() + additional;
 
         if size <= self.alloc.size() {
             return;
         }
         
-        self.resize(self.len() + additional);
+        self.resize(size.next_power_of_two());
     }
 
     /// Shrinks the capacity of this map as much as possible.
@@ -127,27 +129,30 @@ where
             self.reserve(1);
         }
 
-        let finder = finder::Insertable;
-        let controller = controller::Count(self.alloc.size());
+        let meta = Meta::occupied(meta::Hash::new(hash));
+        let finder = finder::Match { meta };
+        let controller = controller::Vacancy;
 
+        match unsafe { self.alloc.find_mut(hash, finder, controller) }
+            .map(|(_, bucket)| unsafe { bucket.assume_init_mut() })
+            .find(|(k, _)| k == &key)
+            .map(|(_, v)| v)
+        {
+            Some(v) => return Some(mem::replace(v, value)),
+            None => ()
+        };
+
+        let finder = finder::Insertable;
+        let controller = controller::None;
         let (mut meta, bucket) = unsafe { self.alloc.find_mut(hash, finder, controller) }
             .nth(0)
             .unwrap();
 
-        let old = match *meta {
-            Meta::DELETED | Meta::VACANT => None,
-            _ => {
-                self.len += 1;
-                Some( unsafe { bucket.assume_init_read() }.1 )
-            }
-        };
-
         meta.occupy(hash);
         bucket.write((key, value));
+        self.len += 1;
 
-        self.alloc.trailing_meta();
-
-        old
+        None
     }
 
     /// Removes a value whose key matches the given `key` from this map.

@@ -94,7 +94,7 @@ impl<T> Alloc<T> {
     }
 
     /// # SAFETY
-    /// The caller must ensure that Alloc::trailing_meta is called if the front 32 indices are mutated.
+    /// Mutations for the meta should match the mutations for the buckets.
     pub unsafe fn find_mut<F: Finder,  C: Controller> (&mut self, hash: u64, finder: F, controller: C) -> FindMut<'_, T, F, C> {
         let index = hash as usize & self.size.saturating_sub(1);
 

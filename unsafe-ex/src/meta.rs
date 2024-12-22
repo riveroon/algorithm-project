@@ -44,7 +44,7 @@ impl Meta {
     };
 
     pub const fn occupied(hash: Hash) -> Self {
-        let inner = hash.inner & HASH_MASK & OCCUPIED as u8;
+        let inner = (hash.inner & HASH_MASK) | OCCUPIED as u8;
         
         Self { inner }
     }

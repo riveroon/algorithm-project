@@ -1,4 +1,4 @@
-use std::ops;
+use std::{fmt::Debug, ops};
 
 use crate::{meta, prelude::*};
 
@@ -52,7 +52,9 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
                 &mut *(alloc.meta.add(self.index) as *mut _)
             };
 
-            self.found = self.finder.find(group);
+            let mask = !u32::MAX.checked_shl(alloc.size as u32)
+                .unwrap_or(0);
+            self.found = self.finder.find(group) & mask;
 
             self.finished = likely(self.controller.finished(group));
 
@@ -61,6 +63,7 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
     }
 }
 
+#[derive(Debug)]
 enum MetaMutInner<'a> {
     Normal(&'a mut Meta),
     WithTrailing(&'a mut Meta, &'a mut Meta)
@@ -116,6 +119,12 @@ impl ops::Deref for MetaMut<'_> {
             Normal(meta) => meta,
             WithTrailing(meta, _) => meta
         }
+    }
+}
+
+impl Debug for MetaMut<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
     }
 }
 
