@@ -57,6 +57,7 @@ impl<K, V, S> HashMap<K, V, S> {
 
     pub fn clear(&mut self) {
         let _ = self.drain();
+        self.len = 0;
     }
 
     pub fn drain(&mut self) -> Drain<'_, K, V> {
@@ -187,6 +188,7 @@ where
         unsafe { self.alloc.find_mut(hash, finder, controller) }
             .find(|(_, bucket)| unsafe { bucket.assume_init_ref() }.0.borrow() == key)
             .map(|(mut meta, bucket)| {
+                self.len -= 1;
                 meta.write(Meta::DELETED);
                 unsafe { bucket.assume_init_read() }
             })
