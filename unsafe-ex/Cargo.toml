@@ -6,3 +6,9 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
+ahash = "0.8"
+bench = { path = "../bench" }
+
+[[bench]]
+name = "bench"
+harness = false

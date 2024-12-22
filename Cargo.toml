@@ -4,5 +4,6 @@ resolver = "2"
 members = [
     "safe-iex",
     "safe-ex",
-    "unsafe-ex"
+    "unsafe-ex",
+    "bench"
 ]
