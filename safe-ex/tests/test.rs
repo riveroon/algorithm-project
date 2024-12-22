@@ -42,7 +42,7 @@ pub fn modify_lookup() {
     let mut map: HashMap<Key, usize> = HashMap::new();
 
     for i in 0..100 {
-        map.insert(Key(i), i);
+        map.insert(Key(i), !i);
     }
 
     for i in 0..100 {
