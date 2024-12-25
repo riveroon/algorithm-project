@@ -7,7 +7,6 @@ pub struct Drain<'a, T> {
 }
 
 impl<'a, T> Drain<'a, T> {
-    #[inline]
     pub fn new(alloc: &'a mut Alloc<T>) -> Self {
         let finder = finder::Occupied;
         let controller = controller::None;

@@ -69,7 +69,6 @@ impl<K, V, S> HashMap<K, V, S> {
         let _ = self.drain();
     }
 
-    #[inline]
     pub fn drain(&mut self) -> Drain<'_, K, V> {
         let drain = Drain {
             drain: self.alloc.drain(),
@@ -122,7 +121,7 @@ where
     /// Panics if the new allocation size overflows [`usize`].
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
-        let size = self.len() + additional;
+        let size = ((self.len() + additional) / 4) * 5;
 
         if size <= self.alloc.size() {
             return;
@@ -138,12 +137,12 @@ where
     }
 
     #[inline(always)]
-    fn auto_reserve(&mut self) {
-        if self.len + self.deleted + 1 > (self.capacity() / 8) * 7 {
+    fn auto_reserve(&mut self, additional: usize) {
+        if self.len + self.deleted + additional > (self.capacity() / 8) * 7 {
             if self.len < (self.capacity() / 2) {
                 self.resize(self.capacity());
             } else {
-                self.reserve(8);
+                self.reserve(additional.max(8));
             }
         }
     }
@@ -161,7 +160,7 @@ where
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let hash = self.hasher.hash_one(&key);
 
-        self.auto_reserve();
+        self.auto_reserve(1);
 
         let meta = Meta::occupied(meta::Hash::new(hash));
         let finder = finder::Match { meta };

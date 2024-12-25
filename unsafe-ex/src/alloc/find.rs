@@ -58,7 +58,7 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
                 .unwrap_or(0);
             self.found = self.finder.find(group) & mask;
 
-            self.finished = self.controller.finished(group);
+            self.finished = likely(self.controller.finished(group));
 
             self.index = self.index + GROUP_SIZE;
         }
@@ -114,6 +114,7 @@ impl MetaMut<'_> {
 impl ops::Deref for MetaMut<'_> {
     type Target = Meta;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         use MetaMutInner::*;
 
@@ -136,6 +137,7 @@ pub struct Find<'a, T, F, C> {
 }
 
 impl<'a, T, F, C> Find<'a, T, F, C> {
+    #[inline]
     pub fn new(alloc: &'a Alloc<T>, index: usize, finder: F, controller: C) -> Self {
         let inner = FindInner::new(alloc, index, finder, controller);
 
@@ -146,6 +148,7 @@ impl<'a, T, F, C> Find<'a, T, F, C> {
 impl<'a, T, F: Finder, C: Controller> Iterator for Find<'a, T, F, C> {
     type Item = (&'a Meta, &'a MaybeUninit<T>);
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next(self.alloc)
             .map(|i| unsafe {(
@@ -181,6 +184,7 @@ impl<'a, T, F, C> FindMut<'a, T, F, C> {
 impl<'a, T, F: Finder, C: Controller> Iterator for FindMut<'a, T, F, C> {
     type Item = (MetaMut<'a>, &'a mut MaybeUninit<T>);
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next(self.alloc)
             .map(|i| (

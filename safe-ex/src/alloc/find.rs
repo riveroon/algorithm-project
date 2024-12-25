@@ -48,7 +48,7 @@ impl<F: Finder, C: Controller> FindInner<F, C> {
                 .unwrap_or(0);
             self.found = self.finder.find(group) & mask;
 
-            self.finished = self.controller.finished(group);
+            self.finished = likely(self.controller.finished(group));
 
             self.index = self.index + GROUP_SIZE;
         }
