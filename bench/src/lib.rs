@@ -3,16 +3,19 @@ pub use fastrand::Rng;
 
 pub struct Settings {
     pub count: usize,
+    pub iter: usize,
     pub range: u32
 }
 
 pub const SMALL_COUNT: Settings = Settings {
     count: 400, 
+    iter: 100,
     range: 600
 };
 
 pub const LARGE_COUNT: Settings = Settings {
     count: 600_000,
+    iter: 40_000,
     range: 800_000
 };
 
@@ -32,20 +35,17 @@ impl SmallKey {
 #[derive(PartialEq, Eq, Hash)]
 pub struct LargeKey {
     id: u32,
-    data: [u8; 64]
+    data: [u128; 4]
 }
 
 impl LargeKey {
     pub fn new(id: u32) -> Self {
-        let data = [0; 64];
+        let data = [0; 4];
         Self { id, data }
     }
 
     pub fn rand(rng: &mut Rng, range: u32) -> Self {
-        let mut this = Self::new(rng.u32(..range));
-        rng.fill(&mut this.data);
-
-        this
+        Self::new(rng.u32(..range))
     }
 }
 
@@ -70,10 +70,11 @@ macro_rules! insert_one {
             const SETTINGS: $crate::Settings = $crate::$iter;
             let mut rng = rng.clone();
             b.iter(|| {
-                let mut map = <$map>::with_capacity(SETTINGS.count);
-                for i in 0..SETTINGS.count {
+                let mut map = <$map>::with_capacity((SETTINGS.range) as usize);
+                for i in 0..SETTINGS.iter {
                     map.insert(black_box(<$key>::rand(&mut rng, SETTINGS.range)), i);
                 }
+                black_box(map);
             })
         });
     };
@@ -111,10 +112,8 @@ macro_rules! lookup_one {
             let mut rng = rng.clone();
             let mut map = $crate::setup!($map, rng, $iter, $key);
             b.iter(|| {
-                for i in 0..SETTINGS.count {
-                    let key = <$key>::rand(&mut rng, SETTINGS.range);
-                    black_box(map.get(&key));
-                }
+                let key = black_box(<$key>::rand(&mut rng, SETTINGS.range));
+                black_box(map.get(&key));
             })
         });
     };
@@ -152,8 +151,8 @@ macro_rules! remove_one {
             let mut rng = rng.clone();
             let mut map = $crate::setup!($map, rng, $iter, $key);
             b.iter(|| {
-                for i in 0..SETTINGS.count {
-                    let key = <$key>::rand(&mut rng, SETTINGS.range);
+                for i in 0..SETTINGS.iter {
+                    let key = black_box(<$key>::rand(&mut rng, SETTINGS.range));
                     black_box(map.remove(&key));
                 }
             })
@@ -166,7 +165,6 @@ macro_rules! remove_group {
     ($label:literal, $c:ident, $rng:ident, $key:ty, $iter:ident, $($name:literal $map:ty),+) => {
         {
             let mut group = $c.benchmark_group($label);
-            //group.measurement_time(Duration::from_secs(10));
             $(
                 let rng = $rng.clone();
                 $crate::remove_one!($name, group, $map, rng, $iter, $key);
@@ -214,48 +212,3 @@ macro_rules! bench {
         criterion_main!(benches);
     };
 }
-
-/*
-fn bench_iterations(c: &mut Criterion) {
-    let mut group = c.benchmark_group("iterations");
-
-    // Benchmark full map iterations
-    group.bench_function("small_map_small_key", |b| {
-        let map = setup_small_map_small_key();
-        b.iter(|| {
-            for item in map.iter() {
-                black_box(item);
-            }
-        })
-    });
-
-    group.bench_function("large_map_small_key", |b| {
-        let map = setup_large_map_small_key();
-        b.iter(|| {
-            for item in map.iter() {
-                black_box(item);
-            }
-        })
-    });
-
-    group.bench_function("small_map_large_key", |b| {
-        let map = setup_small_map_large_key();
-        b.iter(|| {
-            for item in map.iter() {
-                black_box(item);
-            }
-        })
-    });
-
-    group.bench_function("large_map_large_key", |b| {
-        let map = setup_large_map_large_key();
-        b.iter(|| {
-            for item in map.iter() {
-                black_box(item);
-            }
-        })
-    });
-
-    group.finish();
-}
-*/
