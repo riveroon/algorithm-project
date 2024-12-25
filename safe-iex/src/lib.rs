@@ -102,8 +102,6 @@ where K: Hash + Eq, S: BuildHasher
         }
     }
 
-
-
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         if self.items * 2 >= self.table.len() {
             self.resize(self.table.len() * 2);
@@ -152,7 +150,7 @@ where K: Hash + Eq, S: BuildHasher
         let pair = self.table[pos].take();
         if pair.is_some() {
             self.items -= 1;
-            self.rehash();
+            self.rehash(pos + 1);
         }
         pair
     }
@@ -252,16 +250,29 @@ where K: Hash + Eq, S: BuildHasher
     }
 
 
-    fn rehash(&mut self) {
+    fn rehash(&mut self, from: usize) {
         let capacity = self.table.len();
 
-        let mut new_table = Vec::with_capacity(capacity);
-        for _ in 0..capacity {
-            new_table.push(None);
-        }
+        let old_table = match self.table[from..].iter().position(Option::is_none) {
+            Some(len) => {
+                let mut empty: Vec<Option<(K, V)>> = (0..len).map(|_| None).collect();
+                self.table[from..from + len].swap_with_slice(&mut empty);
+                empty
+            },
+            None => {
+                let Some(len1) = self.table[0..].iter().position(Option::is_none) else { return };
 
-        let old_table = std::mem::replace(&mut self.table, new_table);
-        self.items = 0;
+                let len0 = self.table.len() - from;
+                let mut vec: Vec<Option<(K, V)>> = (0..len0 + len1).map(|_| None).collect();
+                self.table[from..].swap_with_slice(&mut vec[..len0]);
+                
+                self.table[0..len1].swap_with_slice(&mut vec[len0..]);
+
+                vec
+            }
+        };
+
+        self.items -= old_table.len();
 
         for slot in old_table.into_iter() {
             if let Some((k, v)) = slot {
